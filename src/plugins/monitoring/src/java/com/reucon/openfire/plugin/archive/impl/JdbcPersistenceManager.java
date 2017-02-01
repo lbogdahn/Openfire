@@ -53,7 +53,7 @@ public class JdbcPersistenceManager implements PersistenceManager {
             + "min(ofConParticipant.joinedDate) AS startDate, " + "max(ofConParticipant.leftDate) as leftDate "
 			+ "FROM ofConversation "
 			+ "INNER JOIN ofConParticipant ON ofConversation.conversationID = ofConParticipant.conversationID "
-            + "INNER JOIN (SELECT conversationID, toJID FROM ofMessageArchive union all SELECT conversationID, fromJID as toJID FROM ofMessageArchive) ofMessageArchive ON ofConParticipant.conversationID = ofMessageArchive.conversationID ";
+            + "INNER JOIN (SELECT conversationID, toJID FROM ofMessageArchive ###OFMESSAGEARCHIVE_INNER_WHERE### union all SELECT conversationID, fromJID as toJID FROM ofMessageArchive ###OFMESSAGEARCHIVE_INNER_WHERE###  ) ofMessageArchive ON ofConParticipant.conversationID = ofMessageArchive.conversationID ";
 
     	public static final String SELECT_CONVERSATIONS_GROUP_BY = " GROUP BY ofConversation.conversationID, ofConversation.room, ofConversation.isExternal, ofConversation.lastActivity, ofConversation.messageCount, ofConversation.startDate, ofConParticipant.bareJID, ofConParticipant.jidResource, ofConParticipant.nickname, ofConParticipant.bareJID, ofMessageArchive.toJID";
 
@@ -75,9 +75,9 @@ public class JdbcPersistenceManager implements PersistenceManager {
 
 	public static final String COUNT_CONVERSATIONS = "SELECT COUNT(DISTINCT ofConversation.conversationID) FROM ofConversation "
 			+ "INNER JOIN ofConParticipant ON ofConversation.conversationID = ofConParticipant.conversationID "
-			+ "INNER JOIN (SELECT conversationID, toJID FROM ofMessageArchive "
+			+ "INNER JOIN (SELECT conversationID, toJID FROM ofMessageArchive ###OFMESSAGEARCHIVE_INNER_WHERE###"
 			+ "union all "
-			+ "SELECT conversationID, fromJID as toJID FROM ofMessageArchive) ofMessageArchive ON ofConParticipant.conversationID = ofMessageArchive.conversationID";
+			+ "SELECT conversationID, fromJID as toJID FROM ofMessageArchive ###OFMESSAGEARCHIVE_INNER_WHERE###) ofMessageArchive ON ofConParticipant.conversationID = ofMessageArchive.conversationID";
 
 	// public static final String COUNT_CONVERSATIONS =
 	// "SELECT count(*) FROM archiveConversations AS c";
@@ -240,8 +240,26 @@ public class JdbcPersistenceManager implements PersistenceManager {
 
 		conversations = new TreeMap<Long, Conversation>();
 
-		querySB = new StringBuilder(SELECT_CONVERSATIONS);
-		whereSB = new StringBuilder();
+        /**
+         * SELECT SUBSET OF ofMessageArchive if possible
+         */
+        String selectConversationsBaseQuery = SELECT_CONVERSATIONS;
+        String selectConversationsBaseQueryReplacement = "";
+
+		if (ownerJid != null && withJid != null) {
+			selectConversationsBaseQueryReplacement = " WHERE ( ofMessageArchive.toJID IN ('" + ownerJid + "', '" + withJid + "') OR ofMessageArchive.fromJID IN ('" + ownerJid + "', '" + withJid + "') )";
+		} else if (ownerJid != null) {
+			selectConversationsBaseQueryReplacement = " WHERE ( ofMessageArchive.toJID IN ('" + ownerJid + "') OR ofMessageArchive.fromJID IN ('" + ownerJid + "') )";
+		} else if (withJid != null) {
+			selectConversationsBaseQueryReplacement = " WHERE ( ofMessageArchive.toJID IN ('" + withJid + "') OR ofMessageArchive.fromJID IN ('" + withJid + "') )";
+		}
+
+		selectConversationsBaseQuery = selectConversationsBaseQuery.replace("###OFMESSAGEARCHIVE_INNER_WHERE###", selectConversationsBaseQueryReplacement);
+
+		querySB = new StringBuilder(selectConversationsBaseQuery.toString());
+		Log.debug("LB" + querySB);
+
+        whereSB = new StringBuilder();
 		limitSB = new StringBuilder();
 
 		startDate = getAuditedStartDate(startDate);
@@ -307,6 +325,8 @@ public class JdbcPersistenceManager implements PersistenceManager {
 		try {
 			con = DbConnectionManager.getConnection();
 			pstmt = con.prepareStatement(querySB.toString());
+			Log.debug("LB" + pstmt.toString());
+
 			bindConversationParameters(startDate, endDate, ownerJid, withJid, pstmt);
 			rs = pstmt.executeQuery();
 			Log.debug("findConversations: SELECT_CONVERSATIONS: " + pstmt.toString());
@@ -340,7 +360,23 @@ public class JdbcPersistenceManager implements PersistenceManager {
 	private int countConversations(Date startDate, Date endDate, String ownerJid, String withJid, String whereClause) {
 		StringBuilder querySB;
 
-		querySB = new StringBuilder(COUNT_CONVERSATIONS);
+		/**
+		 * SELECT SUBSET OF ofMessageArchive if possible
+		 */
+		String selectConversationsBaseQuery = COUNT_CONVERSATIONS;
+		String selectConversationsBaseQueryReplacement = "";
+
+		if (ownerJid != null && withJid != null) {
+			selectConversationsBaseQueryReplacement = " WHERE ( ofMessageArchive.toJID IN ('" + ownerJid + "', '" + withJid + "') OR ofMessageArchive.fromJID IN ('" + ownerJid + "', '" + withJid + "') )";
+		} else if (ownerJid != null) {
+			selectConversationsBaseQueryReplacement = " WHERE ( ofMessageArchive.toJID IN ('" + ownerJid + "') OR ofMessageArchive.fromJID IN ('" + ownerJid + "') )";
+		} else if (withJid != null) {
+			selectConversationsBaseQueryReplacement = " WHERE ( ofMessageArchive.toJID IN ('" + withJid + "') OR ofMessageArchive.fromJID IN ('" + withJid + "') )";
+		}
+		selectConversationsBaseQuery = selectConversationsBaseQuery.replace("###OFMESSAGEARCHIVE_INNER_WHERE###", selectConversationsBaseQueryReplacement);
+		querySB = new StringBuilder(selectConversationsBaseQuery.toString());
+		Log.debug("LB" + querySB);
+
 		if (whereClause != null && whereClause.length() != 0) {
 			querySB.append(" WHERE ").append(whereClause);
 		}
@@ -369,7 +405,23 @@ public class JdbcPersistenceManager implements PersistenceManager {
 	private int countConversationsBefore(Date startDate, Date endDate, String ownerJid, String withJid, Long before, String whereClause) {
 		StringBuilder querySB;
 
-		querySB = new StringBuilder(COUNT_CONVERSATIONS);
+		/**
+		 * SELECT SUBSET OF ofMessageArchive if possible
+		 */
+		String selectConversationsBaseQuery = COUNT_CONVERSATIONS;
+		String selectConversationsBaseQueryReplacement = "";
+
+		if (ownerJid != null && withJid != null) {
+			selectConversationsBaseQueryReplacement = " WHERE ( ofMessageArchive.toJID IN ('" + ownerJid + "', '" + withJid + "') OR ofMessageArchive.fromJID IN ('" + ownerJid + "', '" + withJid + "') )";
+		} else if (ownerJid != null) {
+			selectConversationsBaseQueryReplacement = " WHERE ( ofMessageArchive.toJID IN ('" + ownerJid + "') OR ofMessageArchive.fromJID IN ('" + ownerJid + "') )";
+		} else if (withJid != null) {
+			selectConversationsBaseQueryReplacement = " WHERE ( ofMessageArchive.toJID IN ('" + withJid + "') OR ofMessageArchive.fromJID IN ('" + withJid + "') )";
+		}
+		selectConversationsBaseQuery = selectConversationsBaseQuery.replace("###OFMESSAGEARCHIVE_INNER_WHERE###", selectConversationsBaseQueryReplacement);
+		querySB = new StringBuilder(selectConversationsBaseQuery.toString());
+		Log.debug("LB" + querySB);
+
 		querySB.append(" WHERE ");
 		if (whereClause != null && whereClause.length() != 0) {
 			querySB.append(whereClause);
@@ -705,7 +757,11 @@ public class JdbcPersistenceManager implements PersistenceManager {
 			return conversations;
 		}
 
-		querySB = new StringBuilder(SELECT_CONVERSATIONS);
+		String selectConversationsBaseQuery = SELECT_CONVERSATIONS;
+		selectConversationsBaseQuery = selectConversationsBaseQuery.replace("###OFMESSAGEARCHIVE_INNER_WHERE###", "");
+
+		querySB = new StringBuilder(selectConversationsBaseQuery.toString());
+
 		querySB.append(" WHERE ");
 		querySB.append(CONVERSATION_ID);
 		querySB.append(" IN ( ");
@@ -760,87 +816,109 @@ public class JdbcPersistenceManager implements PersistenceManager {
 		PreparedStatement pstmt = null;
 		ResultSet rs = null;
 
-		querySB = new StringBuilder(SELECT_CONVERSATIONS);
-		querySB.append(" WHERE ");
+		/**
+		 * SELECT SUBSET OF ofMessageArchive if possible
+		 * SELECT DISTINCT ofConversation.conversationID, ofConversation.room, ofConversation.isExternal, ofConversation.startDate, ofConversation.lastActivity, ofConversation.messageCount, ofConParticipant.joinedDate, ofConParticipant.leftDate, ofConParticipant.bareJID, ofConParticipant.jidResource, ofConParticipant.nickname, ofConParticipant.bareJID as fromJID, ofMessageArchive.toJID FROM ofConversation INNER JOIN ofConParticipant ON ofConversation.conversationID = ofConParticipant.conversationID INNER JOIN (SELECT conversationID, toJID FROM ofMessageArchive union all SELECT conversationID, fromJID as toJID FROM ofMessageArchive) ofMessageArchive ON ofConParticipant.conversationID = ofMessageArchive.conversationID WHERE ofConversation.startDate >= 1458192864693 AND ofConversation.lastActivity <= 1460969402361 AND ofConParticipant.bareJID = 'bellelematin@chat.lovepoint-club.de' AND ofMessageArchive.toJID = 'shaun75@chat.lovepoint-club.de' ORDER BY ofConversation.conversationID
+
+		 */
+		String selectConversationsBaseQuery = SELECT_CONVERSATIONS;
+		String selectConversationsBaseQueryReplacement = "";
+
+
 		if (conversationId != null) {
-			querySB.append(CONVERSATION_ID).append(" = ? ");
-		} else {
-			querySB.append(CONVERSATION_OWNER_JID).append(" = ?");
-			if (withJid != null) {
-				querySB.append(" AND ");
-				querySB.append(CONVERSATION_WITH_JID).append(" = ? ");
-			}
-			if (start != null) {
-				querySB.append(" AND ");
-				querySB.append(CONVERSATION_START_TIME).append(" = ? ");
-			}
+			selectConversationsBaseQueryReplacement = " WHERE ( ofMessageArchive.conversationID =" + conversationId + " )";
+		} else if (ownerJid != null && withJid != null) {
+				selectConversationsBaseQueryReplacement = " WHERE ( ofMessageArchive.toJID IN ('" + ownerJid + "', '" + withJid + "') OR ofMessageArchive.fromJID IN ('" + ownerJid + "', '" + withJid + "') )";
+		} else if (ownerJid != null) {
+				selectConversationsBaseQueryReplacement = " WHERE ( ofMessageArchive.toJID IN ('" + ownerJid + "') OR ofMessageArchive.fromJID IN ('" + ownerJid + "') )";
+		} else if (withJid != null) {
+				selectConversationsBaseQueryReplacement = " WHERE ( ofMessageArchive.toJID IN ('" + withJid + "') OR ofMessageArchive.fromJID IN ('" + withJid + "') )";
 		}
-		querySB.append(SELECT_CONVERSATIONS_GROUP_BY);
 
-		try {
-			con = DbConnectionManager.getConnection();
-			pstmt = con.prepareStatement(querySB.toString());
-			int i = 1;
+		selectConversationsBaseQuery = selectConversationsBaseQuery.replace("###OFMESSAGEARCHIVE_INNER_WHERE###", selectConversationsBaseQueryReplacement);
 
+			querySB = new StringBuilder(selectConversationsBaseQuery.toString());
+			querySB.append(" WHERE ");
 			if (conversationId != null) {
-				pstmt.setLong(1, conversationId);
+				querySB.append(CONVERSATION_ID).append(" = ? ");
 			} else {
-				pstmt.setString(i++, ownerJid);
+				querySB.append(CONVERSATION_OWNER_JID).append(" = ?");
 				if (withJid != null) {
-					pstmt.setString(i++, withJid);
+					querySB.append(" AND ");
+					querySB.append(CONVERSATION_WITH_JID).append(" = ? ");
 				}
 				if (start != null) {
-					pstmt.setLong(i++, dateToMillis(start));
+					querySB.append(" AND ");
+					querySB.append(CONVERSATION_START_TIME).append(" = ? ");
 				}
 			}
-			rs = pstmt.executeQuery();
-			Log.debug("getConversation: SELECT_CONVERSATIONS: " + pstmt.toString());
-			if (rs.next()) {
-				conversation = extractConversation(rs);
-			} else {
-				return null;
-			}
+			querySB.append(SELECT_CONVERSATIONS_GROUP_BY);
 
-			rs.close();
-			pstmt.close();
+			try {
+				con = DbConnectionManager.getConnection();
+				Log.debug("LB: " + querySB.toString());
+				pstmt = con.prepareStatement(querySB.toString());
+				int i = 1;
 
-			pstmt = con.prepareStatement(SELECT_PARTICIPANTS_BY_CONVERSATION);
-			pstmt.setLong(1, conversation.getId());
-
-			rs = pstmt.executeQuery();
-			Log.debug("getConversation: SELECT_PARTICIPANTS_BY_CONVERSATION: " + pstmt.toString());
-
-			while (rs.next()) {
-				for (Participant participant : extractParticipant(rs)) {
-					conversation.addParticipant(participant);
+				if (conversationId != null) {
+					pstmt.setLong(1, conversationId);
+				} else {
+					pstmt.setString(i++, ownerJid);
+					if (withJid != null) {
+						pstmt.setString(i++, withJid);
+					}
+					if (start != null) {
+						pstmt.setLong(i++, dateToMillis(start));
+					}
 				}
+				rs = pstmt.executeQuery();
+				Log.debug("getConversation: SELECT_CONVERSATIONS: " + pstmt.toString());
+				if (rs.next()) {
+					conversation = extractConversation(rs);
+				} else {
+					return null;
+				}
+
+				rs.close();
+				pstmt.close();
+
+				pstmt = con.prepareStatement(SELECT_PARTICIPANTS_BY_CONVERSATION);
+				pstmt.setLong(1, conversation.getId());
+
+				rs = pstmt.executeQuery();
+				Log.debug("getConversation: SELECT_PARTICIPANTS_BY_CONVERSATION: " + pstmt.toString());
+
+				while (rs.next()) {
+					for (Participant participant : extractParticipant(rs)) {
+						conversation.addParticipant(participant);
+					}
+				}
+
+				rs.close();
+				pstmt.close();
+
+				pstmt = con.prepareStatement(SELECT_MESSAGES_BY_CONVERSATION);
+				pstmt.setLong(1, conversation.getId());
+				pstmt.setString(2, conversation.getOwnerJid());
+
+				rs = pstmt.executeQuery();
+				Log.debug("getConversation: SELECT_MESSAGES_BY_CONVERSATION: " + pstmt.toString());
+
+				while (rs.next()) {
+					ArchivedMessage message;
+
+					message = extractMessage(rs);
+					message.setConversation(conversation);
+					conversation.addMessage(message);
+				}
+			} catch (SQLException sqle) {
+				Log.error("Error selecting conversation", sqle);
+			} finally {
+				DbConnectionManager.closeConnection(rs, pstmt, con);
 			}
 
-			rs.close();
-			pstmt.close();
-
-			pstmt = con.prepareStatement(SELECT_MESSAGES_BY_CONVERSATION);
-			pstmt.setLong(1, conversation.getId());
-			pstmt.setString(2, conversation.getOwnerJid());
-
-			rs = pstmt.executeQuery();
-			Log.debug("getConversation: SELECT_MESSAGES_BY_CONVERSATION: " + pstmt.toString());
-
-			while (rs.next()) {
-				ArchivedMessage message;
-
-				message = extractMessage(rs);
-				message.setConversation(conversation);
-				conversation.addMessage(message);
-			}
-		} catch (SQLException sqle) {
-			Log.error("Error selecting conversation", sqle);
-		} finally {
-			DbConnectionManager.closeConnection(rs, pstmt, con);
+			return conversation;
 		}
-
-		return conversation;
-	}
 
 	private String getWithJidConversations(ResultSet rs) throws SQLException {
 		String bareJid = rs.getString("bareJID");
@@ -955,20 +1033,20 @@ public class JdbcPersistenceManager implements PersistenceManager {
 	 * Determines whether a result page is the last of a set.
 	 *
 	 * @param firstItemIndex index (in whole set) of first item in page.
-	 * @param resultCount total number of results in set.
-	 * @param pageSize number of results in a page.
-	 * @param reverse whether paging is being performed in reverse (back to front)
+	 * @param resultCount    total number of results in set.
+	 * @param pageSize       number of results in a page.
+	 * @param reverse        whether paging is being performed in reverse (back to front)
 	 * @return whether results are from last page.
 	 */
 	private boolean isLastPage(int firstItemIndex, int resultCount, int pageSize, boolean reverse) {
 
-		if(reverse) {
+		if (reverse) {
 			// Index of first item in last page always 0 when reverse
-			if(firstItemIndex == 0) {
+			if (firstItemIndex == 0) {
 				return true;
 			}
 		} else {
-			if((firstItemIndex + pageSize) >= resultCount) {
+			if ((firstItemIndex + pageSize) >= resultCount) {
 				return true;
 			}
 		}
